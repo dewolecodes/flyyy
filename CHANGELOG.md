@@ -1,3 +1,10 @@
+# 1.0.0 (2026-01-12)
+
+
+### Features
+
+* add server-side usage enforcement for AI and publishing ([56c49fb](https://github.com/dewolecodes/flyyy/commit/56c49fbee1f0ce194c57ecba7694739a200c53d2))
+
 ## [1.7.7](https://github.com/ixartz/SaaS-Boilerplate/compare/v1.7.6...v1.7.7) (2025-12-12)
 
 
