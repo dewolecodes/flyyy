@@ -1,0 +1,24 @@
+/// ⚠ Drizzle is authoritative. Do NOT run Prisma migrations on this database.
+
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model OrganizationModel {
+  id                                String   @id
+  stripeCustomerId                  String?  @map("stripe_customer_id")
+  stripeSubscriptionId              String?  @map("stripe_subscription_id")
+  stripeSubscriptionPriceId         String?  @map("stripe_subscription_price_id")
+  stripeSubscriptionStatus          String?  @map("stripe_subscription_status")
+  stripeSubscriptionCurrentPeriodEnd BigInt? @map("stripe_subscription_current_period_end")
+  updatedAt                         DateTime @map("updated_at")
+  createdAt                         DateTime @map("created_at")
+  plan                              String   @default("free")
+
+  @@map("organization")
+}

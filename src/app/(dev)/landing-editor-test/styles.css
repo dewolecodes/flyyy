@@ -1,0 +1,19 @@
+.editor-root{padding:20px;display:flex;gap:20px;font-family:Inter,Arial,Helvetica,sans-serif}
+.editor-main{flex:1}
+.editor-title{margin:0 0 12px 0}
+.controls{display:flex;gap:8px;margin-bottom:12px}
+.btn{padding:6px 10px;border-radius:6px;border:1px solid #d1d5db;background:#fff;cursor:pointer}
+.input{padding:6px;border-radius:6px;border:1px solid #d1d5db;background:#fff}
+.select{padding:6px;border-radius:6px;border:1px solid #d1d5db;background:#fff}
+.theme-controls{margin-bottom:12px}
+.theme-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.theme-label{display:flex;gap:6px;align-items:center}
+.subheading{margin-bottom:8px}
+.list-title{font-size:14px;color:#374151}
+.sections-list{display:grid;gap:8px}
+.section-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid #e5e7eb;border-radius:6px;background:#fff}
+.drag-handle{cursor:grab;padding:6px;background:#f3f4f6;border-radius:4px}
+.renderer-wrap{border:1px solid #e5e7eb;padding:12px}
+.debug-wrap{width:420px}
+.debug-pre{white-space:pre-wrap;word-break:break-word;background:#111827;color:#f8fafc;padding:12px;border-radius:8px;max-height:80vh;overflow:auto}
+.section-label{font-weight:600}
