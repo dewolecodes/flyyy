@@ -56,6 +56,7 @@ export default async function EditLandingPagePage({ params }: Props) {
 'use client';
 
 import * as React from 'react';
+import { isAIEnabledClient } from '@/libs/env';
 import { useForm } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -126,6 +127,10 @@ function EditLandingPageForm({ initial, id, hasDraft, latestIsPublished }: { ini
   }
 
   async function generateAI() {
+    if (!isAIEnabledClient) {
+      setAiError('AI features are disabled');
+      return;
+    }
     setServerError(null);
     setAiError(null);
     const values = getValues();
@@ -189,6 +194,10 @@ function EditLandingPageForm({ initial, id, hasDraft, latestIsPublished }: { ini
   // Section-level AI: generate suggestion for a single section
   async function generateSectionAI(section: any, mode: 'rewrite' | 'improve' | 'generate') {
     setAiError(null)
+    if (!isAIEnabledClient) {
+      setAiError('AI features are disabled');
+      return;
+    }
     try {
       const payload: any = {
         landingPageId: id,
@@ -399,9 +408,9 @@ function EditLandingPageForm({ initial, id, hasDraft, latestIsPublished }: { ini
             <div className="flex items-center justify-between">
               <div><strong>{s.type}</strong> {s.id ? <span className="text-xs text-muted-foreground">({s.id})</span> : null}</div>
               <div className="flex items-center gap-2">
-                <Button size="sm" onClick={() => generateSectionAI(s, 'rewrite')}>Rewrite</Button>
-                <Button size="sm" onClick={() => generateSectionAI(s, 'improve')}>Improve</Button>
-                <Button size="sm" onClick={() => generateSectionAI(s, 'generate')}>Generate</Button>
+                <Button size="sm" onClick={() => generateSectionAI(s, 'rewrite')} disabled={!isAIEnabledClient}>Rewrite</Button>
+                <Button size="sm" onClick={() => generateSectionAI(s, 'improve')} disabled={!isAIEnabledClient}>Improve</Button>
+                <Button size="sm" onClick={() => generateSectionAI(s, 'generate')} disabled={!isAIEnabledClient}>Generate</Button>
               </div>
             </div>
             <div className="mt-2 text-sm">
@@ -455,7 +464,7 @@ function EditLandingPageForm({ initial, id, hasDraft, latestIsPublished }: { ini
       {serverError && <div className="text-sm text-destructive">{serverError}</div>}
 
       <div className="flex items-center gap-3">
-        <Button type="button" onClick={generateAI} disabled={aiLoading || isSubmitting} variant="secondary">
+        <Button type="button" onClick={generateAI} disabled={aiLoading || isSubmitting || !isAIEnabledClient} variant="secondary">
           {aiLoading ? 'Generating…' : 'Generate with AI'}
         </Button>
 

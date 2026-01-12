@@ -4,16 +4,18 @@ import { revalidatePath } from 'next/cache';
 
 import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
-import { Env } from '@/libs/Env';
+import { STRIPE_PRICE_BASIC, STRIPE_PRICE_PRO, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, isBillingEnabled } from '@/libs/env';
 import { eq } from 'drizzle-orm';
 
 // Price IDs used to map to plans. Keep in env for production; placeholders are fallback.
-const PRICE_BASIC = process.env.STRIPE_PRICE_BASIC ?? 'price_basic_placeholder';
-const PRICE_PRO = process.env.STRIPE_PRICE_PRO ?? 'price_pro_placeholder';
+const PRICE_BASIC = STRIPE_PRICE_BASIC ?? 'price_basic_placeholder';
+const PRICE_PRO = STRIPE_PRICE_PRO ?? 'price_pro_placeholder';
 
 export async function POST(request: Request) {
-  const stripeKey = Env.STRIPE_SECRET_KEY;
-  const webhookSecret = Env.STRIPE_WEBHOOK_SECRET;
+  if (!isBillingEnabled) return NextResponse.json({ error: 'Billing disabled' }, { status: 501 });
+
+  const stripeKey = STRIPE_SECRET_KEY;
+  const webhookSecret = STRIPE_WEBHOOK_SECRET;
 
   if (!stripeKey || !webhookSecret) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 });

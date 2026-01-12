@@ -3,6 +3,9 @@ import { auth } from '@clerk/nextjs/server'
 import { db } from '@/libs/DB'
 import { landingPageVersionSchema, landingPageSchema } from '@/models/Schema'
 import { eq, desc, and } from 'drizzle-orm'
+import { assertPublishAllowed } from '@/libs/Usage'
+import { getOrganization } from '@/libs/Org'
+import type { Plan } from '@/libs/Entitlements'
 
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
   const landingPageId = params?.id
@@ -44,6 +47,28 @@ export async function POST(_request: Request, { params }: { params: { id: string
     }
 
     const now = new Date()
+
+    // Enforce publishing limits only if this action will increase the total published count.
+    // If the landing page is already `published`, replacing the published version does not change the count.
+    if (String(lp.status) !== 'published') {
+      function mapOrgPlan(p?: string | null): Plan {
+        if (!p) return 'starter'
+        const s = String(p).toLowerCase()
+        if (s === 'starter' || s === 'growth' || s === 'scale') return s as Plan
+        if (s === 'free') return 'starter'
+        if (s === 'basic') return 'growth'
+        if (s === 'pro') return 'scale'
+        return 'starter'
+      }
+
+      const orgRow = await getOrganization(clerkOrgId)
+      const plan = mapOrgPlan(orgRow?.plan ?? undefined)
+      try {
+        await assertPublishAllowed(clerkOrgId, plan)
+      } catch (err: any) {
+        return NextResponse.json({ error: String(err?.message ?? err) }, { status: 403 })
+      }
+    }
 
     // Mark the selected draft as published
     await db.update(landingPageVersionSchema).set({ publishedAt: now }).where(eq(landingPageVersionSchema.id, draft.id))

@@ -6,7 +6,7 @@ import { db } from '@/libs/DB';
 import { landingPageSchema, landingPageVersionSchema, landingPagesSchema } from '@/models/Schema';
 import { getOrganization } from '@/libs/Org';
 import { eq } from 'drizzle-orm';
-import { getLimit, getRequiredPlanForCount } from '@/libs/Entitlements';
+import { getEntitlements } from '@/libs/Entitlements';
 import { PlanError } from '@/libs/PlanGuard';
 
 const createSchema = z.object({
@@ -77,10 +77,21 @@ export async function POST(request: Request) {
     const existingCount = Array.isArray(existing) ? existing.length : 0;
 
     // Enforce per-plan limits via centralized entitlements.
-    const allowed = getLimit(org.plan ?? 'free', 'landing_pages');
+    const plan = (org.plan ?? 'starter') as any;
+    const allowed = getEntitlements(plan).landingPages.maxPublished;
     if (allowed !== Infinity && existingCount >= allowed) {
-      const requiredPlan = getRequiredPlanForCount('landing_pages', existingCount);
-      const err = new PlanError('Insufficient plan', 403, 'INSUFFICIENT_ENTITLEMENT', requiredPlan ?? undefined, (org.plan as any) ?? 'free');
+      // Compute minimal plan that would allow another published page
+      const order: Array<any> = ['starter', 'growth', 'scale'];
+      let requiredPlan: any = undefined;
+      for (const p of order) {
+        const ent = getEntitlements(p as any);
+        const limit = ent.landingPages.maxPublished;
+        if (limit === Infinity || existingCount < limit) {
+          requiredPlan = p;
+          break;
+        }
+      }
+      const err = new PlanError('Insufficient plan', 403, 'INSUFFICIENT_ENTITLEMENT', requiredPlan ?? undefined, (org.plan as any) ?? 'starter');
       return NextResponse.json(
         {
           error: 'Insufficient plan',

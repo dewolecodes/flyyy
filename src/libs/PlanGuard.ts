@@ -1,11 +1,12 @@
 import { getOrganization } from '@/libs/Org';
+import type { Plan } from '@/libs/Entitlements';
 
-export type Plan = 'free' | 'basic' | 'pro';
+export type { Plan };
 
 const PLAN_ORDER: Record<Plan, number> = {
-  free: 0,
-  basic: 1,
-  pro: 2,
+  starter: 0,
+  growth: 1,
+  scale: 2,
 };
 
 export class PlanError extends Error {
@@ -28,7 +29,7 @@ export class PlanError extends Error {
  * Check whether `current` plan meets or exceeds `minPlan`.
  */
 export function hasMinimumPlan(current: Plan | null | undefined, minPlan: Plan) {
-  const currentRank = PLAN_ORDER[(current ?? 'free') as Plan];
+  const currentRank = PLAN_ORDER[(current ?? 'starter') as Plan];
   const minRank = PLAN_ORDER[minPlan];
   return currentRank >= minRank;
 }
@@ -49,7 +50,7 @@ export async function requirePlan(orgId: string, options: { minPlan: Plan }) {
     throw new PlanError('Organization not found', 404, 'ORG_NOT_FOUND', options.minPlan, null);
   }
 
-  const currentPlan = (org.plan ?? 'free') as Plan;
+  const currentPlan = (org.plan ?? 'starter') as Plan;
   if (!hasMinimumPlan(currentPlan, options.minPlan)) {
     throw new PlanError(
       `Organization plan insufficient: required=${options.minPlan} current=${currentPlan}`,
@@ -82,7 +83,7 @@ export async function requirePlanAllowed(orgId: string, allowedPlans: Plan[], op
     throw new PlanError('Organization not found', 404, 'ORG_NOT_FOUND', allowedPlans[0], null);
   }
 
-  const currentPlan = (org.plan ?? 'free') as Plan;
+  const currentPlan = (org.plan ?? 'starter') as Plan;
   const allowed = allowedPlans.includes(currentPlan);
   if (!allowed) {
     const err = new PlanError(

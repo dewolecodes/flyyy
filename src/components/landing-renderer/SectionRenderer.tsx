@@ -1,4 +1,5 @@
 import React from 'react'
+import { NODE_ENV } from '@/libs/env'
 import { Section, Theme } from './types'
 import HeroSection from './sections/HeroSection'
 import FeaturesSection from './sections/FeaturesSection'
@@ -74,7 +75,7 @@ export default function SectionRenderer({ section, theme, layout }: Props) {
         </section>
       )
     default:
-      if (process.env.NODE_ENV !== 'production') {
+      if (NODE_ENV !== 'production') {
         return (
           <section className={wrapperClass} style={spacingStyle}>
             <div style={{ opacity: 0.6 }}>Unknown section type: {String(section.type)}</div>

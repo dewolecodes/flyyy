@@ -10,7 +10,7 @@ import { Client } from 'pg';
 
 import * as schema from '@/models/Schema';
 
-import { Env } from './Env';
+import { DATABASE_URL, NEXT_PHASE } from './env';
 
 let client;
 let drizzle;
@@ -20,12 +20,12 @@ let drizzle;
 // Prefer an explicit DATABASE_URL in non-build phases, but treat obvious
 // placeholder values as "not provided" to avoid DNS errors during local dev
 // (e.g. someone left DATABASE_URL=YOUR_LOCAL_DB_URL in their env).
-const hasDatabaseUrl = Boolean(Env.DATABASE_URL) && !/YOUR_LOCAL_DB_URL/i.test(String(Env.DATABASE_URL));
+const hasDatabaseUrl = Boolean(DATABASE_URL) && !/YOUR_LOCAL_DB_URL/i.test(String(DATABASE_URL));
 
-if (process.env.NEXT_PHASE !== PHASE_PRODUCTION_BUILD && hasDatabaseUrl) {
+if (NEXT_PHASE !== PHASE_PRODUCTION_BUILD && hasDatabaseUrl) {
   try {
     client = new Client({
-      connectionString: String(Env.DATABASE_URL),
+      connectionString: String(DATABASE_URL),
     });
     await client.connect();
 

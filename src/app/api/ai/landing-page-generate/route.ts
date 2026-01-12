@@ -6,6 +6,10 @@ import { db } from '@/libs/DB'
 import { landingPageSchema } from '@/models/Schema'
 import { eq } from 'drizzle-orm'
 import { normalizeAIToLandingSchema, generateAISuggestion } from '@/lib/ai/landingPageAI'
+import { isAIEnabled } from '@/libs/env'
+import { assertAIUsageAllowed, incrementAIUsage } from '@/libs/Usage'
+import type { Plan } from '@/libs/Entitlements'
+import { getOrganization } from '@/libs/Org'
 
 const Payload = z.object({
   landingPageId: z.string(),
@@ -24,6 +28,9 @@ const Payload = z.object({
  *   Drizzle stays authoritative.
  */
 export async function POST(request: Request) {
+  if (!isAIEnabled) {
+    return NextResponse.json({ error: 'AI features are disabled' }, { status: 503 });
+  }
   try {
     const a = await auth()
     const clerkOrgId = a.orgId
@@ -40,6 +47,26 @@ export async function POST(request: Request) {
     if (!lp) return NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
     if (String(lp.organizationId) !== String(clerkOrgId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
+    // Map organization DB plan (legacy values) to Entitlements.Plan
+    function mapOrgPlan(p?: string | null): Plan {
+      if (!p) return 'starter'
+      const s = String(p).toLowerCase()
+      if (s === 'starter' || s === 'growth' || s === 'scale') return s as Plan
+      if (s === 'free') return 'starter'
+      if (s === 'basic') return 'growth'
+      if (s === 'pro') return 'scale'
+      return 'starter'
+    }
+
+    // Enforce server-side AI usage limits before generation
+    const orgRow = await getOrganization(clerkOrgId)
+    const plan = mapOrgPlan(orgRow?.plan ?? undefined)
+    try {
+      await assertAIUsageAllowed(clerkOrgId, plan)
+    } catch (err: any) {
+      return NextResponse.json({ error: String(err?.message ?? err) }, { status: 403 })
+    }
+
     // Call AI generator (server-only). The generator returns raw content which
     // we MUST normalize before returning to the client.
     const rawSuggestion = await generateAISuggestion(String(landingPageId), mode as any, context)
@@ -53,6 +80,13 @@ export async function POST(request: Request) {
       mode,
       context: context ?? null,
       suggestion: normalized,
+    }
+
+    // Increment usage after successful generation. Do not fail the request if increment fails.
+    try {
+      await incrementAIUsage(clerkOrgId)
+    } catch (e) {
+      // swallow
     }
 
     return NextResponse.json({ aiDraft })

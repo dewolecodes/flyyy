@@ -1,12 +1,14 @@
- 'use client';
+"use client";
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
+import { isBillingEnabledClient } from '@/libs/env';
 
 export function ManageBillingButton({ className }: { className?: string }) {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   async function handleClick() {
+    if (!isBillingEnabledClient) return;
     setError(null);
     setLoading(true);
     try {
@@ -29,7 +31,7 @@ export function ManageBillingButton({ className }: { className?: string }) {
 
   return (
     <div className={className}>
-      <Button onClick={handleClick} disabled={loading} variant="outline">
+      <Button onClick={handleClick} disabled={loading || !isBillingEnabledClient} variant="outline">
         {loading ? 'Redirecting...' : 'Manage Billing'}
       </Button>
       {error ? <div className="text-destructive text-sm mt-2">{error}</div> : null}

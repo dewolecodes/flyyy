@@ -56,6 +56,7 @@
   "exclude": [
     "./out/**/*",
     "./node_modules/**/*",
+    "src/libs/Env.ts",
     "**/*.spec.ts",
     "**/*.e2e.ts"
   ],

@@ -5,16 +5,17 @@ import { auth } from '@clerk/nextjs/server';
 import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 import { getOrganization } from '@/libs/Org';
-import { Env } from '@/libs/Env';
+import { STRIPE_SECRET_KEY, NEXT_PUBLIC_APP_URL, isBillingEnabled } from '@/libs/env';
 import { eq } from 'drizzle-orm';
 
 export async function POST(_request: Request) {
+  if (!isBillingEnabled) return NextResponse.json({ error: 'Billing disabled' }, { status: 501 });
   const { userId, orgId } = await auth();
   if (!userId || !orgId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const stripeKey = Env.STRIPE_SECRET_KEY;
+  const stripeKey = STRIPE_SECRET_KEY;
   if (!stripeKey) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 });
   }
@@ -36,7 +37,7 @@ export async function POST(_request: Request) {
       await db.update(organizationSchema).set({ stripeCustomerId: customerId }).where(eq(organizationSchema.id, org.id));
     }
 
-    const returnUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000/dashboard';
+    const returnUrl = NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000/dashboard';
     const session = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: returnUrl });
 
     return NextResponse.json({ url: session.url });

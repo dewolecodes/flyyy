@@ -6,9 +6,10 @@ import { db } from '@/libs/DB';
 import { aiUsageSchema } from '@/models/Schema';
 import { getOrganization } from '@/libs/Org';
 import { eq, and } from 'drizzle-orm';
-import { canUseFeature, getMinimumPlanForFeature, getLimit, getRequiredPlanForCount } from '@/libs/Entitlements';
+import { getEntitlements, canUseAI } from '@/libs/Entitlements';
 import { PlanError } from '@/libs/PlanGuard';
 import { sql } from 'drizzle-orm';
+import { isAIEnabled, OPENAI_API_KEY } from '@/libs/env';
 
 // Request validation
 const requestSchema = z.object({
@@ -27,6 +28,9 @@ const responseSchema = z.object({
 const refusalSchema = z.object({ refusal: z.string().min(1) });
 
 export async function POST(request: Request) {
+  if (!isAIEnabled) {
+    return NextResponse.json({ error: 'AI features are disabled' }, { status: 503 });
+  }
   const { userId, orgId } = await auth();
   if (!userId || !orgId) {
     return NextResponse.json({ error: 'Unauthorized - must be signed in and belong to an organization' }, { status: 401 });
@@ -39,10 +43,10 @@ export async function POST(request: Request) {
   }
 
   // Gate AI generation by entitlement
-  const allowed = canUseFeature(org.plan ?? 'free', 'ai_generation');
+  const plan = (org.plan ?? 'starter') as any;
+  const allowed = canUseAI(plan);
   if (!allowed) {
-    const required = getMinimumPlanForFeature('ai_generation');
-    const err = new PlanError('AI generation not available on current plan', 403, 'INSUFFICIENT_ENTITLEMENT', required ?? undefined, (org.plan as any) ?? 'free');
+    const err = new PlanError('AI generation not available on current plan', 403, 'INSUFFICIENT_ENTITLEMENT', undefined, (org.plan as any) ?? 'starter');
     return NextResponse.json(
       {
         error: 'Insufficient plan',
@@ -73,7 +77,7 @@ export async function POST(request: Request) {
 
   const { businessType, targetAudience, tone } = parsed.data;
 
-  const OPENAI_KEY = process.env.OPENAI_API_KEY;
+  const OPENAI_KEY = OPENAI_API_KEY;
   if (!OPENAI_KEY) {
     return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
   }
@@ -87,10 +91,20 @@ export async function POST(request: Request) {
     .from(aiUsageSchema)
     .where(and(eq(aiUsageSchema.organizationId, String(orgId)), eq(aiUsageSchema.period, period)));
   const currentCount = Array.isArray(usageRows) && usageRows[0] ? Number((usageRows[0] as any).count ?? 0) : 0;
-  const limit = getLimit(org.plan ?? 'free', 'ai_generation');
+  const ent = getEntitlements(org.plan ?? 'starter');
+  const limit = ent.ai.monthlyLimit;
   if (limit !== Infinity && currentCount >= limit) {
-    const required = getRequiredPlanForCount('ai_generation', currentCount) ?? getMinimumPlanForFeature('ai_generation');
-    const err = new PlanError('AI monthly quota exceeded', 403, 'QUOTA_EXCEEDED', required ?? undefined, (org.plan as any) ?? 'free');
+    // Compute minimal plan that would allow another unit
+    const order: Array<string> = ['starter', 'growth', 'scale'];
+    let required: any = undefined;
+    for (const p of order) {
+      const e = getEntitlements(p as any);
+      if (e.ai.monthlyLimit === Infinity || currentCount < e.ai.monthlyLimit) {
+        required = p;
+        break;
+      }
+    }
+    const err = new PlanError('AI monthly quota exceeded', 403, 'QUOTA_EXCEEDED', required ?? undefined, (org.plan as any) ?? 'starter');
     return NextResponse.json({ error: 'Quota exceeded', code: err.code, requiredPlan: err.requiredPlan, currentPlan: err.currentPlan }, { status: err.status });
   }
 

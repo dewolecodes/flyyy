@@ -10,8 +10,8 @@ export async function GET() {
   }
 
   try {
-    // Require pro plan for this demo endpoint
-    await requirePlanAllowed(orgId, ['pro']);
+    // Require scale plan for this demo endpoint
+    await requirePlanAllowed(orgId, ['scale']);
 
     return NextResponse.json({ message: 'Access granted to pro-only resource' });
   } catch (err: any) {

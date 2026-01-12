@@ -7,7 +7,7 @@ import { DashboardSection } from '@/features/dashboard/DashboardSection';
 import { Button } from '@/components/ui/button';
 import { getOrganization, getLandingPagesCount } from '@/libs/Org';
 import { Plan, requirePlanAllowed } from '@/libs/PlanGuard';
-import { getLimit, getRequiredPlanForCount } from '@/libs/Entitlements';
+import { getEntitlements, canPublishLandingPage } from '@/libs/Entitlements';
 import { db } from '@/libs/DB';
 import { landingPageSchema, landingPageVersionSchema } from '@/models/Schema';
 import { eq } from 'drizzle-orm';
@@ -25,23 +25,35 @@ export default async function LandingPagesPage() {
     redirect('/sign-in');
   }
 
-  // Server-side enforcement example: require at least 'basic' or 'pro' to access landing-pages
+  // Server-side enforcement example: require at least 'growth' or 'scale' to access landing-pages
   // features. If the plan is insufficient, redirect to the pricing page.
   try {
-    await requirePlanAllowed(orgId, ['basic', 'pro'], { redirectTo: '/pricing' });
+    await requirePlanAllowed(orgId, ['growth', 'scale'], { redirectTo: '/pricing' });
   } catch (e) {
-    // If requirePlanAllowed throws (and doesn't redirect), fall back to redirecting.
     redirect('/pricing');
   }
 
   const pagesCount = await getLandingPagesCount(orgId);
 
-  const currentPlan = (org.plan ?? 'free') as Plan;
+  const currentPlan = (org.plan ?? 'starter') as Plan;
 
   // Determine entitlement-based limit and whether the org can create another page
-  const allowed = getLimit(currentPlan, 'landing_pages');
-  const canCreate = allowed === Infinity || pagesCount < allowed;
-  const requiredForNext = getRequiredPlanForCount('landing_pages', pagesCount) ?? 'pro';
+  const canCreate = canPublishLandingPage(currentPlan, pagesCount);
+  const currentEnt = getEntitlements(currentPlan);
+  const allowed = currentEnt.landingPages.maxPublished;
+
+  // Compute minimal plan that would allow one more published page
+  const order: Plan[] = ['starter', 'growth', 'scale'];
+  let requiredForNext: Plan | null = null;
+  for (const p of order) {
+    const ent = getEntitlements(p);
+    const limit = ent.landingPages.maxPublished;
+    if (limit === Infinity || pagesCount < limit) {
+      requiredForNext = p;
+      break;
+    }
+  }
+  if (!requiredForNext) requiredForNext = 'scale';
 
   // Fetch landing pages for this organization (server-side)
   const pages = await db
@@ -76,7 +88,7 @@ export default async function LandingPagesPage() {
               <Button disabled>Create Landing Page</Button>
               <div className="text-sm text-muted-foreground">
                 Your current plan <strong className="mx-1">{currentPlan}</strong> allows creating up to{' '}
-                {requiredForNext === 'basic' ? '1' : requiredForNext === 'pro' ? '2' : '1'} landing page{requiredForNext === 'pro' ? 's' : ''}.
+                {allowed === Infinity ? 'unlimited' : String(allowed)} landing page{allowed === Infinity ? 's' : allowed !== 1 ? 's' : ''}.
                 <div className="mt-1">
                   <Link href="/pricing">
                     <Button variant="outline">Upgrade</Button>

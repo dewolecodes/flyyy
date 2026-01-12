@@ -8,17 +8,18 @@ import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 import { eq } from 'drizzle-orm';
 import { getOrganization } from '@/libs/Org';
-import { Env } from '@/libs/Env';
+import { STRIPE_PRICE_BASIC, STRIPE_PRICE_PRO, STRIPE_SECRET_KEY, NEXT_PUBLIC_APP_URL, isBillingEnabled } from '@/libs/env';
 
 const bodySchema = z.object({
   plan: z.enum(['basic', 'pro']),
 });
 
 // Use environment price IDs or placeholders
-const PRICE_BASIC = process.env.STRIPE_PRICE_BASIC ?? 'price_basic_placeholder';
-const PRICE_PRO = process.env.STRIPE_PRICE_PRO ?? 'price_pro_placeholder';
+const PRICE_BASIC = STRIPE_PRICE_BASIC ?? 'price_basic_placeholder';
+const PRICE_PRO = STRIPE_PRICE_PRO ?? 'price_pro_placeholder';
 
 export async function POST(request: Request) {
+  if (!isBillingEnabled) return NextResponse.json({ error: 'Billing disabled' }, { status: 501 });
   const { userId, orgId } = await auth();
   if (!userId || !orgId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
   }
 
   // Initialize Stripe
-  const stripeKey = Env.STRIPE_SECRET_KEY;
+  const stripeKey = STRIPE_SECRET_KEY;
   if (!stripeKey) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 });
   }
@@ -72,8 +73,8 @@ export async function POST(request: Request) {
 
     const priceId = plan === 'basic' ? PRICE_BASIC : PRICE_PRO;
 
-    const successUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/billing/success`;
-    const cancelUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/dashboard`;
+    const successUrl = `${NEXT_PUBLIC_APP_URL ?? ''}/billing/success`;
+    const cancelUrl = `${NEXT_PUBLIC_APP_URL ?? ''}/dashboard`;
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
