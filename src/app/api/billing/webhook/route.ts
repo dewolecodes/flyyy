@@ -4,15 +4,18 @@ import { revalidatePath } from 'next/cache';
 
 import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
-import { STRIPE_PRICE_BASIC, STRIPE_PRICE_PRO, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, isBillingEnabled } from '@/libs/env';
+import { STRIPE_PRICE_BASIC, STRIPE_PRICE_PRO, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, isBillingEnabled as ENV_BILLING } from '@/libs/env';
+import { isBillingEnabled } from '@/libs/FeatureFlags'
 import { eq } from 'drizzle-orm';
+import { logger } from '@/libs/Logger';
+import { mapErrorToResponse } from '@/libs/ApiErrors'
 
 // Price IDs used to map to plans. Keep in env for production; placeholders are fallback.
 const PRICE_BASIC = STRIPE_PRICE_BASIC ?? 'price_basic_placeholder';
 const PRICE_PRO = STRIPE_PRICE_PRO ?? 'price_pro_placeholder';
 
 export async function POST(request: Request) {
-  if (!isBillingEnabled) return NextResponse.json({ error: 'Billing disabled' }, { status: 501 });
+  if (!ENV_BILLING) return NextResponse.json({ error: 'Billing disabled' }, { status: 501 });
 
   const stripeKey = STRIPE_SECRET_KEY;
   const webhookSecret = STRIPE_WEBHOOK_SECRET;
@@ -61,50 +64,155 @@ export async function POST(request: Request) {
       const subscription = await stripe.subscriptions.retrieve(subscriptionId, { expand: ['items.data.price'] });
 
       // Determine plan from the first price on the subscription (if available)
-      const priceId = subscription.items?.data?.[0]?.price?.id;
+      // Validate price IDs strictly: unknown prices must be rejected so we don't
+      // silently grant an unintended plan. The environment provides canonical
+      // production price ids; fallbacks are development placeholders.
+      const priceId = subscription.items?.data?.[0]?.price?.id ?? null;
+
+      // Map of known price IDs -> internal organization plan names.
+      const PRICE_MAP: Record<string, 'basic' | 'pro'> = {
+        [PRICE_BASIC]: 'basic',
+        [PRICE_PRO]: 'pro',
+      };
+
       let plan: string | null = null;
       if (subscription.status === 'active') {
-        if (priceId === PRICE_BASIC) plan = 'basic';
-        else if (priceId === PRICE_PRO) plan = 'pro';
+        if (!priceId) {
+          // Active subscription but missing price — treat as invalid
+          logger.error({ subscriptionId: subscription.id }, 'Active subscription missing price id');
+          throw new Error('Unknown or missing subscription price for active subscription');
+        }
+
+        const mapped = PRICE_MAP[priceId];
+        if (!mapped) {
+          // Reject unknown prices explicitly so we don't accidentally map to
+          // an unintended plan. This returns an error to the webhook caller
+          // (Stripe) and is logged server-side for investigation.
+          logger.error({ subscriptionId: subscription.id, priceId }, 'Received unknown Stripe price id');
+          const e: any = new Error('Unknown Stripe price id');
+          e.code = 'UNKNOWN_PRICE';
+          throw e;
+        }
+
+        plan = mapped;
       } else {
         // Non-active subscriptions are treated as free per policy
         plan = 'free';
       }
 
       // Find the organization: prefer matching stripe subscription id, then customer id, then metadata org id
-      let org = await findOrgBySubscriptionId(subscription.id);
-      if (!org && customerId) org = await findOrgByCustomerId(customerId);
-      if (!org && metadataOrgId) org = await findOrgByMetadataOrgId(metadataOrgId);
+      // Select the current plan and stripe fields so we can perform idempotent
+      // comparisons and avoid unnecessary writes on retry.
+      async function findOrgFullBySubscriptionId(subId: string) {
+        const rows = await db
+          .select({ id: organizationSchema.id, plan: organizationSchema.plan, stripeSubscriptionId: organizationSchema.stripeSubscriptionId, stripeSubscriptionPriceId: organizationSchema.stripeSubscriptionPriceId, subscriptionStatus: organizationSchema.subscriptionStatus })
+          .from(organizationSchema)
+          .where(eq(organizationSchema.stripeSubscriptionId, subId))
+          .limit(1);
+        return rows[0] ?? null;
+      }
+
+      async function findOrgFullByCustomerId(customerId: string) {
+        const rows = await db
+          .select({ id: organizationSchema.id, plan: organizationSchema.plan, stripeSubscriptionId: organizationSchema.stripeSubscriptionId, stripeSubscriptionPriceId: organizationSchema.stripeSubscriptionPriceId, subscriptionStatus: organizationSchema.subscriptionStatus })
+          .from(organizationSchema)
+          .where(eq(organizationSchema.stripeCustomerId, customerId))
+          .limit(1);
+        return rows[0] ?? null;
+      }
+
+      async function findOrgFullByMetadataOrgId(metadataOrgId?: string | null) {
+        if (!metadataOrgId) return null;
+        const rows = await db
+          .select({ id: organizationSchema.id, plan: organizationSchema.plan, stripeSubscriptionId: organizationSchema.stripeSubscriptionId, stripeSubscriptionPriceId: organizationSchema.stripeSubscriptionPriceId, subscriptionStatus: organizationSchema.subscriptionStatus })
+          .from(organizationSchema)
+          .where(eq(organizationSchema.id, String(metadataOrgId)))
+          .limit(1);
+        return rows[0] ?? null;
+      }
+
+      let org = await findOrgFullBySubscriptionId(subscription.id);
+      if (!org && customerId) org = await findOrgFullByCustomerId(customerId);
+      if (!org && metadataOrgId) org = await findOrgFullByMetadataOrgId(metadataOrgId);
 
       if (!org) {
         // Nothing to update; acknowledge the event so Stripe won't retry infinitely
         return { updated: false, reason: 'org_not_found' };
       }
 
-      // Decide update payload
+      // If billing is disabled for this organization explicitly, refuse to apply subscription updates.
+      const billingAllowed = await isBillingEnabled(org.id)
+      if (!billingAllowed) {
+        logger.warn({ orgId: org.id }, 'Received billing webhook for org with billing disabled; skipping update')
+        const e: any = new Error('Billing disabled for organization')
+        e.code = 'BILLING_DISABLED'
+        throw e
+      }
+
+      // Decide update payload. We also persist the canonical Stripe price id
+      // to the organization row so subsequent webhooks can be compared and
+      // handled idempotently.
       const updates: any = {
         stripeSubscriptionId: subscription.id,
+        stripeSubscriptionPriceId: priceId,
         subscriptionStatus: subscription.status,
         plan: plan,
       };
 
-      // If subscription is canceled or deleted, clear subscription id and set free
       if (subscription.status === 'canceled') {
         updates.stripeSubscriptionId = null;
+        updates.stripeSubscriptionPriceId = null;
         updates.subscriptionStatus = 'canceled';
         updates.plan = 'free';
       }
 
-      // Apply idempotent update
-      await db.update(organizationSchema).set(updates).where(eq(organizationSchema.id, org.id));
+      // Idempotency: only apply the DB update if any of the canonical fields
+      // actually differ. This avoids unnecessary writes and makes retries
+      // from Stripe effectively a no-op.
+      const noChange =
+        org.stripeSubscriptionId === updates.stripeSubscriptionId &&
+        org.stripeSubscriptionPriceId === updates.stripeSubscriptionPriceId &&
+        org.subscriptionStatus === updates.subscriptionStatus &&
+        org.plan === updates.plan;
 
-      // Revalidate the billing success path so server-rendered pages (e.g. /billing/success)
-      // reflect the updated plan promptly. This is safe because the webhook is the
-      // authoritative source and we only revalidate after a successful DB update.
+      if (noChange) {
+        // Nothing to do — already up-to-date
+        return { updated: false };
+      }
+
+      // Perform an atomic compare-and-update inside a DB transaction. We
+      // re-fetch the canonical fields and only apply the update when they
+      // differ. This keeps the operation atomic and idempotent even under
+      // concurrent webhook deliveries.
+      await db.transaction(async (tx) => {
+        const rows = await tx
+          .select({ id: organizationSchema.id, plan: organizationSchema.plan, stripeSubscriptionId: organizationSchema.stripeSubscriptionId, stripeSubscriptionPriceId: organizationSchema.stripeSubscriptionPriceId, subscriptionStatus: organizationSchema.subscriptionStatus })
+          .from(organizationSchema)
+          .where(eq(organizationSchema.id, org.id))
+          .limit(1);
+
+        const current = rows[0] ?? null;
+        if (
+          current &&
+          current.stripeSubscriptionId === updates.stripeSubscriptionId &&
+          current.stripeSubscriptionPriceId === updates.stripeSubscriptionPriceId &&
+          current.subscriptionStatus === updates.subscriptionStatus &&
+          current.plan === updates.plan
+        ) {
+          // Another process already applied the same values — no-op
+          return;
+        }
+
+        await tx.update(organizationSchema).set(updates).where(eq(organizationSchema.id, org.id));
+      });
+
+      // Revalidate the billing success path so server-rendered pages reflect
+      // the updated plan promptly. This runs after a successful DB update.
       try {
         revalidatePath('/billing/success');
       } catch (e) {
         // Swallow any revalidation errors to avoid breaking webhook processing
+        logger.warn({ err: String(e) }, 'Failed to revalidate billing success path after webhook');
       }
 
       return { updated: true };
@@ -179,11 +287,7 @@ export async function POST(request: Request) {
 
         if (subscriptionId) {
           // Re-fetch subscription to get canonical status and update org accordingly
-          try {
-            await syncSubscriptionToOrg(subscriptionId, customerId, null);
-          } catch (e) {
-            // swallow error to avoid retries; Stripe will retry but we don't want to crash
-          }
+          await syncSubscriptionToOrg(subscriptionId, customerId, null);
         } else if (customerId) {
           // If no subscription id, try to find org by customer and mark as unpaid/past_due
           const org = await findOrgByCustomerId(customerId);
@@ -209,6 +313,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ received: true });
   } catch (err: any) {
-    return NextResponse.json({ error: 'Webhook handling failed', details: String(err?.message ?? err) }, { status: 500 });
+    // Preserve explicit UNKNOWN_PRICE behavior so Stripe doesn't retry noisy events
+    if (err?.code === 'UNKNOWN_PRICE') {
+      logger.error({ err: String(err), details: err?.message ?? null }, 'Webhook rejected due to unknown Stripe price id');
+      return NextResponse.json({ error: 'Unknown Stripe price id' }, { status: 400 });
+    }
+
+    const mapped = mapErrorToResponse(err)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }

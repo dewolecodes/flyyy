@@ -76,6 +76,22 @@ export function getEntitlements(plan: Plan): Entitlements {
 }
 
 /**
+ * Resolve an external plan identifier (database or legacy string) to the
+ * canonical `Plan` union used by the entitlements map. This is a strict
+ * resolver intended for server-side enforcement — it throws when the plan
+ * cannot be resolved rather than silently defaulting to a permissive tier.
+ */
+export function resolvePlanStrict(plan?: string | null): Plan {
+  if (!plan) throw new Error('Missing plan');
+  const p = String(plan).toLowerCase();
+  if (p === 'starter' || p === 'growth' || p === 'scale') return p as Plan;
+  if (p === 'free') return 'starter';
+  if (p === 'basic') return 'growth';
+  if (p === 'pro') return 'scale';
+  throw new Error(`Unknown plan: ${String(plan)}`);
+}
+
+/**
  * Convenience: whether AI features are available for the plan.
  */
 export function canUseAI(plan: Plan): boolean {

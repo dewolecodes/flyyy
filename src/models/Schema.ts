@@ -2,6 +2,7 @@ import {
   bigint,
   pgTable,
   serial,
+  integer,
   text,
   uuid,
   timestamp,
@@ -101,8 +102,17 @@ export const landingPageVersionSchema = pgTable('landing_page_version', {
   publishedAt: timestamp('published_at', { mode: 'date' }), // nullable by default ✅
 });
 
-export const aiUsageSchema = pgTable('ai_usage', {
-  organizationId: text('organization_id').notNull(),
-  period: text('period').notNull(), // YYYY-MM
-  count: serial('count').default(0).notNull(),
-});
+export const aiUsageSchema = pgTable(
+  'ai_usage',
+  {
+    organizationId: text('organization_id').notNull(),
+    period: text('period').notNull(), // YYYY-MM
+    count: integer('count').default(0).notNull(),
+    createdAt: timestamp('created_at', { mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    orgPeriodIdx: uniqueIndex('ai_usage_org_period_idx').on(table.organizationId, table.period),
+  }),
+);
+

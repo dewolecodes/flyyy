@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import requireOrgContext from '@/libs/requireOrgContext'
+import { mapErrorToResponse } from '@/libs/ApiErrors'
 import { z } from 'zod';
 
 import { db } from '@/libs/DB';
@@ -17,33 +18,27 @@ const createSchema = z.object({
 });
 
 export async function GET() {
-  const { userId, orgId } = await auth();
-
-  if (!userId || !orgId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
+    const { userId, orgId } = await requireOrgContext()
+
     const pages = await db
       .select()
       .from(landingPageSchema)
       .where(eq(landingPageSchema.organizationId, orgId));
 
     return NextResponse.json(pages);
-  } catch (err) {
-    return NextResponse.json({ error: 'Failed to fetch landing pages' }, { status: 500 });
+  } catch (err: any) {
+    const mapped = mapErrorToResponse(err)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }
 
 export async function POST(request: Request) {
-  const { userId, orgId } = await auth();
-
-  if (!userId || !orgId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  try {
+    const { userId, orgId } = await requireOrgContext()
 
   let body: unknown;
-  try {
+    try {
     body = await request.json();
   } catch (_) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
@@ -61,7 +56,7 @@ export async function POST(request: Request) {
 
   const { slug, title, headline, description } = parse.data;
 
-  try {
+    try {
     // Fetch organization row (use tolerant helper)
     const org = await getOrganization(orgId);
     if (!org) {
@@ -134,13 +129,16 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(inserted, { status: 201 });
-  } catch (err: any) {
+    } catch (err: any) {
     // Handle unique slug constraint
     const msg = (err?.message ?? String(err)).toString();
     if (msg.includes('unique') || msg.includes('already exists')) {
       return NextResponse.json({ error: 'Slug already exists' }, { status: 409 });
     }
-
     return NextResponse.json({ error: 'Failed to create landing page' }, { status: 500 });
+    }
+  } catch (err: any) {
+    const mapped = mapErrorToResponse(err)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }

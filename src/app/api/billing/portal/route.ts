@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { auth } from '@clerk/nextjs/server';
+import requireOrgContext from '@/libs/requireOrgContext'
+import { mapErrorToResponse } from '@/libs/ApiErrors'
 
 import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
@@ -9,11 +10,9 @@ import { STRIPE_SECRET_KEY, NEXT_PUBLIC_APP_URL, isBillingEnabled } from '@/libs
 import { eq } from 'drizzle-orm';
 
 export async function POST(_request: Request) {
-  if (!isBillingEnabled) return NextResponse.json({ error: 'Billing disabled' }, { status: 501 });
-  const { userId, orgId } = await auth();
-  if (!userId || !orgId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  try {
+    if (!isBillingEnabled) return NextResponse.json({ error: 'Billing disabled' }, { status: 501 });
+    const { userId, orgId } = await requireOrgContext()
 
   const stripeKey = STRIPE_SECRET_KEY;
   if (!stripeKey) {
@@ -29,7 +28,7 @@ export async function POST(_request: Request) {
   }
 
   let customerId = org.stripeCustomerId;
-  try {
+    try {
     if (!customerId) {
       // Create a customer in Stripe and persist
       const customer = await stripe.customers.create({ metadata: { organizationId: orgId } });
@@ -41,7 +40,11 @@ export async function POST(_request: Request) {
     const session = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: returnUrl });
 
     return NextResponse.json({ url: session.url });
+    } catch (err: any) {
+      return NextResponse.json({ error: 'Failed to create customer portal session', details: String(err?.message ?? err) }, { status: 502 });
+    }
   } catch (err: any) {
-    return NextResponse.json({ error: 'Failed to create customer portal session', details: String(err?.message ?? err) }, { status: 502 });
+    const mapped = mapErrorToResponse(err)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }

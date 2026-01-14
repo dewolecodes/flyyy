@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import requireOrgContext from '@/libs/requireOrgContext'
+import { mapErrorToResponse } from '@/libs/ApiErrors'
 import { z } from 'zod';
 
 import { db } from '@/libs/DB';
@@ -28,19 +29,18 @@ const responseSchema = z.object({
 const refusalSchema = z.object({ refusal: z.string().min(1) });
 
 export async function POST(request: Request) {
-  if (!isAIEnabled) {
-    return NextResponse.json({ error: 'AI features are disabled' }, { status: 503 });
-  }
-  const { userId, orgId } = await auth();
-  if (!userId || !orgId) {
-    return NextResponse.json({ error: 'Unauthorized - must be signed in and belong to an organization' }, { status: 401 });
-  }
+  try {
+    if (!isAIEnabled) {
+      return NextResponse.json({ error: 'AI features are disabled' }, { status: 503 });
+    }
 
-  // Load org from DB to perform entitlement checks (do not trust client input)
-  const org = await getOrganization(orgId);
-  if (!org) {
-    return NextResponse.json({ error: 'Organization not found' }, { status: 404 });
-  }
+    const { userId, orgId } = await requireOrgContext()
+
+    // Load org from DB to perform entitlement checks (do not trust client input)
+    const org = await getOrganization(orgId);
+    if (!org) {
+      return NextResponse.json({ error: 'Organization not found' }, { status: 404 });
+    }
 
   // Gate AI generation by entitlement
   const plan = (org.plan ?? 'starter') as any;
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Quota exceeded', code: err.code, requiredPlan: err.requiredPlan, currentPlan: err.currentPlan }, { status: err.status });
   }
 
-  try {
+    try {
     // System prompt strictly enforces business/marketing behavior and JSON-only output
     const system = `You are a helpful marketing copywriter. You MUST only respond to prompts about business, products, services, or marketing. If the user's request is unrelated to business, output a JSON object with a single field {"refusal":"<brief reason>"} and do not produce marketing text. Otherwise, output ONLY a JSON object with two fields: \"headline\" (a concise, attention-grabbing headline) and \"description\" (a short descriptive paragraph). Do not include any extra explanation, markdown, or text. Keep the headline under 20 words and description under 200 words.`;
 
@@ -191,7 +191,11 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(validated.data);
+    } catch (err: any) {
+      return NextResponse.json({ error: 'AI generation failed', details: err?.message ?? String(err) }, { status: 500 });
+    }
   } catch (err: any) {
-    return NextResponse.json({ error: 'AI generation failed', details: err?.message ?? String(err) }, { status: 500 });
+    const mapped = mapErrorToResponse(err)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }

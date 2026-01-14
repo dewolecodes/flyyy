@@ -90,6 +90,8 @@ export function mergeAIDraftIntoSchema(schema: LandingPageSchema, suggestion: Pa
       if (val == null) continue
       if (Array.isArray(val)) {
         // Replace arrays but sanitize primitives/objects to allowed shapes
+        // Only replace arrays if the target already had this key (avoid adding new unknown arrays)
+        if (!(key in target.content)) continue
         target.content[key] = val.map((it: any) => {
           if (it == null) return it
           if (typeof it === 'object') {
@@ -104,12 +106,16 @@ export function mergeAIDraftIntoSchema(schema: LandingPageSchema, suggestion: Pa
           return null
         }).filter(Boolean)
       } else if (typeof val === 'object') {
+        // Only merge object subkeys if the target already has this key as an object
+        if (!(key in target.content) || typeof target.content[key] !== 'object') continue
         target.content[key] = target.content[key] || {}
         for (const k of Object.keys(val)) {
           const v = val[k]
           if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') (target.content as any)[key][k] = v
         }
       } else if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+        // Only overwrite primitive content keys that already exist on the target
+        if (!(key in target.content)) continue
         ;(target.content as any)[key] = val
       }
     }

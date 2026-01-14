@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@clerk/nextjs/server'
+import requireOrgContext from '@/libs/requireOrgContext'
+import { mapErrorToResponse } from '@/libs/ApiErrors'
 
 import { db } from '@/libs/DB'
 import { landingPageSchema, landingPageVersionSchema } from '@/models/Schema'
@@ -17,9 +18,7 @@ const SavePayload = z.object({
 export async function GET(request: Request) {
   try {
     // Require authenticated org via Clerk. Only members of an org may read drafts.
-    const a = await auth();
-    const clerkOrgId = a.orgId;
-    if (!clerkOrgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const { userId, orgId: clerkOrgId } = await requireOrgContext()
 
     const url = new URL(request.url)
     const landingPageId = url.searchParams.get('landingPageId')
@@ -55,16 +54,15 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ schema: rows[0].schema ?? null })
   } catch (err: any) {
-    return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 })
+    const mapped = mapErrorToResponse(err)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }
 
 export async function POST(request: Request) {
   try {
     // Require authenticated org via Clerk. Only members of an org may save drafts.
-    const a = await auth();
-    const clerkOrgId = a.orgId;
-    if (!clerkOrgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const { userId, orgId: clerkOrgId } = await requireOrgContext()
 
     const body = await request.json()
     const parse = SavePayload.safeParse(body)

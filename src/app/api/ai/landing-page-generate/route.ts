@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@clerk/nextjs/server'
+import requireOrgContext from '@/libs/requireOrgContext'
 
 import { db } from '@/libs/DB'
 import { landingPageSchema } from '@/models/Schema'
 import { eq } from 'drizzle-orm'
 import { normalizeAIToLandingSchema, generateAISuggestion } from '@/lib/ai/landingPageAI'
-import { isAIEnabled } from '@/libs/env'
+import { isAIEnabled } from '@/libs/FeatureFlags'
+import { mapErrorToResponse } from '@/libs/ApiErrors'
 import { assertAIUsageAllowed, incrementAIUsage } from '@/libs/Usage'
 import type { Plan } from '@/libs/Entitlements'
 import { getOrganization } from '@/libs/Org'
@@ -28,13 +29,10 @@ const Payload = z.object({
  *   Drizzle stays authoritative.
  */
 export async function POST(request: Request) {
-  if (!isAIEnabled) {
-    return NextResponse.json({ error: 'AI features are disabled' }, { status: 503 });
-  }
+  // Defer to server-side feature flags (global + per-org overrides)
+  // We'll check per-org after we resolve the authenticated org below.
   try {
-    const a = await auth()
-    const clerkOrgId = a.orgId
-    if (!clerkOrgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const { userId, orgId: clerkOrgId } = await requireOrgContext()
 
     const body = await request.json()
     const parsed = Payload.safeParse(body)
@@ -58,14 +56,12 @@ export async function POST(request: Request) {
       return 'starter'
     }
 
-    // Enforce server-side AI usage limits before generation
+    // Enforce server-side feature flag + AI usage limits before generation
+    const featureAllowed = await isAIEnabled(clerkOrgId)
+    if (!featureAllowed) throw new Error('AI features disabled')
     const orgRow = await getOrganization(clerkOrgId)
     const plan = mapOrgPlan(orgRow?.plan ?? undefined)
-    try {
-      await assertAIUsageAllowed(clerkOrgId, plan)
-    } catch (err: any) {
-      return NextResponse.json({ error: String(err?.message ?? err) }, { status: 403 })
-    }
+    await assertAIUsageAllowed(clerkOrgId, plan)
 
     // Call AI generator (server-only). The generator returns raw content which
     // we MUST normalize before returning to the client.
@@ -91,6 +87,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ aiDraft })
   } catch (err: any) {
-    return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 })
+    const mapped = mapErrorToResponse(err)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }

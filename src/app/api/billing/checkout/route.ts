@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import requireOrgContext from '@/libs/requireOrgContext'
+import { mapErrorToResponse } from '@/libs/ApiErrors'
 import { z } from 'zod';
 
 import Stripe from 'stripe';
@@ -19,11 +20,9 @@ const PRICE_BASIC = STRIPE_PRICE_BASIC ?? 'price_basic_placeholder';
 const PRICE_PRO = STRIPE_PRICE_PRO ?? 'price_pro_placeholder';
 
 export async function POST(request: Request) {
-  if (!isBillingEnabled) return NextResponse.json({ error: 'Billing disabled' }, { status: 501 });
-  const { userId, orgId } = await auth();
-  if (!userId || !orgId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  try {
+    if (!isBillingEnabled) return NextResponse.json({ error: 'Billing disabled' }, { status: 501 });
+    const { userId, orgId } = await requireOrgContext()
 
   let body: unknown;
   try {
@@ -53,7 +52,7 @@ export async function POST(request: Request) {
 
   const stripe = new Stripe(stripeKey, { apiVersion: '2024-06-20' });
 
-  try {
+    try {
     let customerId = org.stripeCustomerId as string | null | undefined;
 
     if (!customerId) {
@@ -89,8 +88,12 @@ export async function POST(request: Request) {
       cancel_url: cancelUrl,
     });
 
-    return NextResponse.json({ url: session.url });
+      return NextResponse.json({ url: session.url });
+    } catch (err: any) {
+      return NextResponse.json({ error: 'Failed to create checkout session', details: String(err?.message ?? err) }, { status: 500 });
+    }
   } catch (err: any) {
-    return NextResponse.json({ error: 'Failed to create checkout session', details: String(err?.message ?? err) }, { status: 500 });
+    const mapped = mapErrorToResponse(err)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }

@@ -25,7 +25,18 @@ export function normalizeAIToLandingSchema(raw: any): Partial<LandingPageSchema>
     out.theme = {}
     for (const k of Object.keys(raw.theme)) {
       const v = raw.theme[k]
-      if (typeof v === 'string') (out.theme as any)[k] = v
+      if (typeof v === 'string') {
+        ;(out.theme as any)[k] = v
+      } else if (v && typeof v === 'object') {
+        // Allow one-level nested theme objects (e.g. colors.primary)
+        ;(out.theme as any)[k] = {}
+        for (const nk of Object.keys(v)) {
+          const nv = v[nk]
+          if (typeof nv === 'string' || typeof nv === 'number' || typeof nv === 'boolean') {
+            ;(out.theme as any)[k][nk] = nv
+          }
+        }
+      }
     }
   }
 

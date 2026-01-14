@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import requireOrgContext from '@/libs/requireOrgContext'
+import { mapErrorToResponse } from '@/libs/ApiErrors'
 import { db } from '@/libs/DB'
 import { landingPageVersionSchema, landingPageSchema } from '@/models/Schema'
 import { eq, desc, and } from 'drizzle-orm'
@@ -15,9 +16,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
   if (!landingPageId) return NextResponse.json({ error: 'Missing landing page id' }, { status: 400 })
 
   try {
-    const a = await auth();
-    const clerkOrgId = a.orgId;
-    if (!clerkOrgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const { userId, orgId: clerkOrgId } = await requireOrgContext()
 
     // Ensure the landing page belongs to this org
     const lp = (await db.select().from(landingPageSchema).where(eq(landingPageSchema.id, String(landingPageId))).limit(1))[0]
@@ -45,6 +44,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
     return NextResponse.json({ unpublished: true })
   } catch (err: any) {
-    return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 })
+    const mapped = mapErrorToResponse(err)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }

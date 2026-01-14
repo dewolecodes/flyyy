@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import requireOrgContext from '@/libs/requireOrgContext'
 import { db } from '@/libs/DB'
 import { landingPageVersionSchema, landingPageSchema } from '@/models/Schema'
 import { eq, desc, and } from 'drizzle-orm'
 import { assertPublishAllowed } from '@/libs/Usage'
+import { isPublishingEnabled } from '@/libs/FeatureFlags'
+import { mapErrorToResponse } from '@/libs/ApiErrors'
 import { getOrganization } from '@/libs/Org'
 import type { Plan } from '@/libs/Entitlements'
 
@@ -13,14 +15,16 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
   try {
     // Require authenticated org via Clerk. Only members of an org may publish.
-    const a = await auth();
-    const clerkOrgId = a.orgId;
-    if (!clerkOrgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const { userId, orgId: clerkOrgId } = await requireOrgContext()
 
     // Ensure the landing page belongs to this org
     const lp = (await db.select().from(landingPageSchema).where(eq(landingPageSchema.id, String(landingPageId))).limit(1))[0]
     if (!lp) return NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
     if (String(lp.organizationId) !== String(clerkOrgId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+      // Enforce publishing feature flag per-organization
+      const publishAllowed = await isPublishingEnabled(clerkOrgId)
+      if (!publishAllowed) throw new Error('Publishing disabled for organization')
 
     // Find latest draft (published_at IS NULL)
     const draft = (await db
@@ -81,6 +85,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
     return NextResponse.json({ published: true })
   } catch (err: any) {
-    return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 })
+    const mapped = mapErrorToResponse(err)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }
