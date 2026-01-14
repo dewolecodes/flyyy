@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import requireOrgContext from '@/libs/requireOrgContext'
 import { mapErrorToResponse } from '@/libs/ApiErrors'
+import { applySecurityHeaders } from '@/libs/SecurityHeaders'
 
 import { db } from '@/libs/DB'
 import { landingPageSchema, landingPageVersionSchema } from '@/models/Schema'
@@ -25,7 +26,10 @@ export async function GET(request: Request) {
     const slug = url.searchParams.get('slug')
 
     if (!landingPageId && !slug) {
-      return NextResponse.json({ error: 'landingPageId or slug required' }, { status: 400 })
+      const r = NextResponse.json({ error: 'landingPageId or slug required' }, { status: 400 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
     }
 
     let whereClause: any
@@ -38,8 +42,18 @@ export async function GET(request: Request) {
     } else {
       // slug path: ensure the slug belongs to this org
       const lp = (await db.select().from(landingPageSchema).where(eq(landingPageSchema.slug, String(slug))).limit(1))[0]
-      if (!lp) return NextResponse.json({ schema: null })
-      if (String(lp.organizationId) !== String(clerkOrgId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      if (!lp) {
+        const r = NextResponse.json({ schema: null })
+        r.headers.set('Cache-Control', 'no-store')
+        try { applySecurityHeaders(r.headers) } catch (e) {}
+        return r
+      }
+      if (String(lp.organizationId) !== String(clerkOrgId)) {
+        const r = NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        r.headers.set('Cache-Control', 'no-store')
+        try { applySecurityHeaders(r.headers) } catch (e) {}
+        return r
+      }
       whereClause = eq(landingPageVersionSchema.landingPageId, String(lp.id))
     }
 
@@ -50,12 +64,23 @@ export async function GET(request: Request) {
       .orderBy(desc(landingPageVersionSchema.createdAt))
       .limit(1)
 
-    if (!rows || !rows[0]) return NextResponse.json({ schema: null })
+    if (!rows || !rows[0]) {
+      const r = NextResponse.json({ schema: null })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
 
-    return NextResponse.json({ schema: rows[0].schema ?? null })
+    const ok = NextResponse.json({ schema: rows[0].schema ?? null })
+    ok.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(ok.headers) } catch (e) {}
+    return ok
   } catch (err: any) {
     const mapped = mapErrorToResponse(err)
-    return NextResponse.json(mapped.body, { status: mapped.status })
+    const r = NextResponse.json(mapped.body, { status: mapped.status })
+    r.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(r.headers) } catch (e) {}
+    return r
   }
 }
 
@@ -66,7 +91,12 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const parse = SavePayload.safeParse(body)
-    if (!parse.success) return NextResponse.json({ error: 'Invalid payload', details: parse.error.format() }, { status: 400 })
+    if (!parse.success) {
+      const r = NextResponse.json({ error: 'Invalid payload', details: parse.error.format() }, { status: 400 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
     // Ignore any organizationId sent by the client; use Clerk org instead
     const { landingPageId, slug, name, schema } = parse.data
 
@@ -92,8 +122,18 @@ export async function POST(request: Request) {
 
     // Ensure landing_page belongs to this org before creating/updating versions
     const lp = (await db.select().from(landingPageSchema).where(eq(landingPageSchema.id, String(lpId))).limit(1))[0]
-    if (!lp) return NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
-    if (String(lp.organizationId) !== String(clerkOrgId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!lp) {
+      const r = NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
+    if (String(lp.organizationId) !== String(clerkOrgId)) {
+      const r = NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
 
     // Find existing draft (publishedAt IS NULL) and update it; otherwise insert new draft version
     const existingDraft = (await db.select().from(landingPageVersionSchema).where(eq(landingPageVersionSchema.landingPageId, lpId)).orderBy(desc(landingPageVersionSchema.createdAt)).limit(1))[0]
@@ -104,8 +144,16 @@ export async function POST(request: Request) {
       await db.insert(landingPageVersionSchema).values({ landingPageId: lpId, schema })
     }
 
-    return NextResponse.json({ landingPageId: lpId })
+    const ok = NextResponse.json({ landingPageId: lpId })
+    ok.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(ok.headers) } catch (e) {}
+    return ok
   } catch (err: any) {
-    return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 })
+    const r = NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 })
+    r.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(r.headers) } catch (e) {}
+    return r
   }
 }
+
+export const runtime = 'nodejs'

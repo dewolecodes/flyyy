@@ -7,6 +7,7 @@ import { db } from '@/libs/DB';
 import { organizationSchema } from '@/models/Schema';
 import { getOrganization } from '@/libs/Org';
 import { STRIPE_SECRET_KEY, NEXT_PUBLIC_APP_URL, isBillingEnabled } from '@/libs/env';
+import { applySecurityHeaders } from '@/libs/SecurityHeaders'
 import { eq } from 'drizzle-orm';
 
 export async function POST(_request: Request) {
@@ -39,12 +40,23 @@ export async function POST(_request: Request) {
     const returnUrl = NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'http://localhost:3000/dashboard';
     const session = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: returnUrl });
 
-    return NextResponse.json({ url: session.url });
+    const r = NextResponse.json({ url: session.url });
+    r.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(r.headers) } catch (e) {}
+    return r
     } catch (err: any) {
-      return NextResponse.json({ error: 'Failed to create customer portal session', details: String(err?.message ?? err) }, { status: 502 });
+      const r = NextResponse.json({ error: 'Failed to create customer portal session', details: String(err?.message ?? err) }, { status: 502 });
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
     }
   } catch (err: any) {
     const mapped = mapErrorToResponse(err)
-    return NextResponse.json(mapped.body, { status: mapped.status })
+    const r = NextResponse.json(mapped.body, { status: mapped.status })
+    r.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(r.headers) } catch (e) {}
+    return r
   }
 }
+
+export const runtime = 'nodejs'

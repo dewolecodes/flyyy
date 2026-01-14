@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import requireOrgContext from '@/libs/requireOrgContext'
 import { mapErrorToResponse } from '@/libs/ApiErrors'
+import { applySecurityHeaders } from '@/libs/SecurityHeaders'
 import { db } from '@/libs/DB'
 import { landingPageVersionSchema, landingPageSchema } from '@/models/Schema'
 import { eq, desc, and } from 'drizzle-orm'
@@ -20,8 +21,18 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
     // Ensure the landing page belongs to this org
     const lp = (await db.select().from(landingPageSchema).where(eq(landingPageSchema.id, String(landingPageId))).limit(1))[0]
-    if (!lp) return NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
-    if (String(lp.organizationId) !== String(clerkOrgId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!lp) {
+      const r = NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
+    if (String(lp.organizationId) !== String(clerkOrgId)) {
+      const r = NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
 
     // Find latest published version
     const published = (await db
@@ -33,7 +44,10 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
     if (!published) {
       // Nothing to unpublish — idempotent success
-      return NextResponse.json({ unpublished: true })
+      const r = NextResponse.json({ unpublished: true })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
     }
 
     // Set the publishedAt to null for that version
@@ -42,9 +56,17 @@ export async function POST(_request: Request, { params }: { params: { id: string
     // Update landing_page status
     await db.update(landingPageSchema).set({ status: 'draft' }).where(eq(landingPageSchema.id, String(landingPageId)))
 
-    return NextResponse.json({ unpublished: true })
+    const ok = NextResponse.json({ unpublished: true })
+    ok.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(ok.headers) } catch (e) {}
+    return ok
   } catch (err: any) {
     const mapped = mapErrorToResponse(err)
-    return NextResponse.json(mapped.body, { status: mapped.status })
+    const r = NextResponse.json(mapped.body, { status: mapped.status })
+    r.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(r.headers) } catch (e) {}
+    return r
   }
 }
+
+export const runtime = 'nodejs'

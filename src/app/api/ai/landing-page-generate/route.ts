@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm'
 import { normalizeAIToLandingSchema, generateAISuggestion } from '@/lib/ai/landingPageAI'
 import { isAIEnabled } from '@/libs/FeatureFlags'
 import { mapErrorToResponse } from '@/libs/ApiErrors'
+import { applySecurityHeaders } from '@/libs/SecurityHeaders'
 import { assertAIUsageAllowed, incrementAIUsage } from '@/libs/Usage'
 import type { Plan } from '@/libs/Entitlements'
 import { getOrganization } from '@/libs/Org'
@@ -36,14 +37,29 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const parsed = Payload.safeParse(body)
-    if (!parsed.success) return NextResponse.json({ error: 'Invalid payload', details: parsed.error.format() }, { status: 400 })
+    if (!parsed.success) {
+      const r = NextResponse.json({ error: 'Invalid payload', details: parsed.error.format() }, { status: 400 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
 
     const { landingPageId, mode, context } = parsed.data
 
     // Ensure landing page exists and belongs to this org
     const lp = (await db.select().from(landingPageSchema).where(eq(landingPageSchema.id, String(landingPageId))).limit(1))[0]
-    if (!lp) return NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
-    if (String(lp.organizationId) !== String(clerkOrgId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!lp) {
+      const r = NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
+    if (String(lp.organizationId) !== String(clerkOrgId)) {
+      const r = NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
 
     // Map organization DB plan (legacy values) to Entitlements.Plan
     function mapOrgPlan(p?: string | null): Plan {
@@ -88,9 +104,17 @@ export async function POST(request: Request) {
       // swallow
     }
 
-    return NextResponse.json({ aiDraft })
+    const ok = NextResponse.json({ aiDraft })
+    ok.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(ok.headers) } catch (e) {}
+    return ok
   } catch (err: any) {
     const mapped = mapErrorToResponse(err)
-    return NextResponse.json(mapped.body, { status: mapped.status })
+    const r = NextResponse.json(mapped.body, { status: mapped.status })
+    r.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(r.headers) } catch (e) {}
+    return r
   }
 }
+
+export const runtime = 'nodejs'

@@ -10,6 +10,7 @@ import { organizationSchema } from '@/models/Schema';
 import { eq } from 'drizzle-orm';
 import { getOrganization } from '@/libs/Org';
 import { STRIPE_PRICE_BASIC, STRIPE_PRICE_PRO, STRIPE_SECRET_KEY, NEXT_PUBLIC_APP_URL, isBillingEnabled } from '@/libs/env';
+import { applySecurityHeaders } from '@/libs/SecurityHeaders'
 
 const bodySchema = z.object({
   plan: z.enum(['basic', 'pro']),
@@ -88,12 +89,23 @@ export async function POST(request: Request) {
       cancel_url: cancelUrl,
     });
 
-      return NextResponse.json({ url: session.url });
+      const r = NextResponse.json({ url: session.url });
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
     } catch (err: any) {
-      return NextResponse.json({ error: 'Failed to create checkout session', details: String(err?.message ?? err) }, { status: 500 });
+      const r = NextResponse.json({ error: 'Failed to create checkout session', details: String(err?.message ?? err) }, { status: 500 });
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
     }
   } catch (err: any) {
     const mapped = mapErrorToResponse(err)
-    return NextResponse.json(mapped.body, { status: mapped.status })
+    const r = NextResponse.json(mapped.body, { status: mapped.status })
+    r.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(r.headers) } catch (e) {}
+    return r
   }
 }
+
+export const runtime = 'nodejs'

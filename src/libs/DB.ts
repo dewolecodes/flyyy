@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { validateEnv } from '@/libs/validateEnv'
 
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
@@ -14,6 +15,9 @@ import { DATABASE_URL, NEXT_PHASE } from './env';
 
 let client;
 let drizzle;
+
+// Validate required environment at module load (fail fast)
+validateEnv()
 
 // Need a database for production? Check out https://www.prisma.io/?via=saasboilerplatesrc
 // Tested and compatible with Next.js Boilerplate

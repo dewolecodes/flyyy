@@ -31,7 +31,10 @@ const refusalSchema = z.object({ refusal: z.string().min(1) });
 export async function POST(request: Request) {
   try {
     if (!isAIEnabled) {
-      return NextResponse.json({ error: 'AI features are disabled' }, { status: 503 });
+        const r = NextResponse.json({ error: 'AI features are disabled' }, { status: 503 });
+        r.headers.set('Cache-Control', 'no-store')
+        try { applySecurityHeaders(r.headers) } catch (e) {}
+        return r
     }
 
     const { userId, orgId } = await requireOrgContext()
@@ -39,7 +42,10 @@ export async function POST(request: Request) {
     // Load org from DB to perform entitlement checks (do not trust client input)
     const org = await getOrganization(orgId);
     if (!org) {
-      return NextResponse.json({ error: 'Organization not found' }, { status: 404 });
+        const r = NextResponse.json({ error: 'Organization not found' }, { status: 404 });
+        r.headers.set('Cache-Control', 'no-store')
+        try { applySecurityHeaders(r.headers) } catch (e) {}
+        return r
     }
 
   // Gate AI generation by entitlement
@@ -72,14 +78,20 @@ export async function POST(request: Request) {
 
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Invalid input', details: parsed.error.format() }, { status: 400 });
+        const r = NextResponse.json({ error: 'Invalid input', details: parsed.error.format() }, { status: 400 });
+        r.headers.set('Cache-Control', 'no-store')
+        try { applySecurityHeaders(r.headers) } catch (e) {}
+        return r
   }
 
   const { businessType, targetAudience, tone } = parsed.data;
 
   const OPENAI_KEY = OPENAI_API_KEY;
   if (!OPENAI_KEY) {
-    return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
+        const r = NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
+        r.headers.set('Cache-Control', 'no-store')
+        try { applySecurityHeaders(r.headers) } catch (e) {}
+        return r
   }
 
   // Monthly usage enforcement
@@ -133,13 +145,19 @@ export async function POST(request: Request) {
 
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
-      return NextResponse.json({ error: 'OpenAI request failed', details: txt }, { status: 502 });
+          const r = NextResponse.json({ error: 'OpenAI request failed', details: txt }, { status: 502 });
+          r.headers.set('Cache-Control', 'no-store')
+          try { applySecurityHeaders(r.headers) } catch (e) {}
+          return r
     }
 
     const payload = await res.json();
     const content = payload?.choices?.[0]?.message?.content;
     if (!content || typeof content !== 'string') {
-      return NextResponse.json({ error: 'No content from OpenAI' }, { status: 502 });
+          const r = NextResponse.json({ error: 'No content from OpenAI' }, { status: 502 });
+          r.headers.set('Cache-Control', 'no-store')
+          try { applySecurityHeaders(r.headers) } catch (e) {}
+          return r
     }
 
     // Extract first JSON object from the model output
@@ -150,18 +168,27 @@ export async function POST(request: Request) {
       const jsonStr = firstBrace >= 0 && lastBrace >= 0 ? content.slice(firstBrace, lastBrace + 1) : content;
       parsedJson = JSON.parse(jsonStr);
     } catch (err) {
-      return NextResponse.json({ error: 'Failed to parse OpenAI response as JSON', raw: content }, { status: 502 });
+          const r = NextResponse.json({ error: 'Failed to parse OpenAI response as JSON', raw: content }, { status: 502 });
+          r.headers.set('Cache-Control', 'no-store')
+          try { applySecurityHeaders(r.headers) } catch (e) {}
+          return r
     }
 
     // If model refused, return refusal message
     const maybeRefusal = refusalSchema.safeParse(parsedJson);
     if (maybeRefusal.success) {
-      return NextResponse.json({ error: `Refusal: ${maybeRefusal.data.refusal}` }, { status: 400 });
+          const r = NextResponse.json({ error: `Refusal: ${maybeRefusal.data.refusal}` }, { status: 400 });
+          r.headers.set('Cache-Control', 'no-store')
+          try { applySecurityHeaders(r.headers) } catch (e) {}
+          return r
     }
 
     const validated = responseSchema.safeParse(parsedJson);
     if (!validated.success) {
-      return NextResponse.json({ error: 'OpenAI response validation failed', details: validated.error.format(), raw: parsedJson }, { status: 502 });
+          const r = NextResponse.json({ error: 'OpenAI response validation failed', details: validated.error.format(), raw: parsedJson }, { status: 502 });
+          r.headers.set('Cache-Control', 'no-store')
+          try { applySecurityHeaders(r.headers) } catch (e) {}
+          return r
     }
 
     // Successful generation — increment monthly usage atomically
@@ -190,12 +217,23 @@ export async function POST(request: Request) {
       console.error('Failed to increment AI usage', e);
     }
 
-    return NextResponse.json(validated.data);
+        const ok = NextResponse.json(validated.data);
+        ok.headers.set('Cache-Control', 'no-store')
+        try { applySecurityHeaders(ok.headers) } catch (e) {}
+        return ok
     } catch (err: any) {
-      return NextResponse.json({ error: 'AI generation failed', details: err?.message ?? String(err) }, { status: 500 });
+        const r = NextResponse.json({ error: 'AI generation failed', details: err?.message ?? String(err) }, { status: 500 });
+        r.headers.set('Cache-Control', 'no-store')
+        try { applySecurityHeaders(r.headers) } catch (e) {}
+        return r
     }
   } catch (err: any) {
     const mapped = mapErrorToResponse(err)
-    return NextResponse.json(mapped.body, { status: mapped.status })
+      const r = NextResponse.json(mapped.body, { status: mapped.status })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
   }
 }
+
+  export const runtime = 'nodejs'

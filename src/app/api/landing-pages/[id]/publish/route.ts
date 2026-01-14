@@ -6,6 +6,7 @@ import { eq, desc, and } from 'drizzle-orm'
 import { assertPublishAllowed } from '@/libs/Usage'
 import { isPublishingEnabled } from '@/libs/FeatureFlags'
 import { mapErrorToResponse } from '@/libs/ApiErrors'
+import { applySecurityHeaders } from '@/libs/SecurityHeaders'
 import { getOrganization } from '@/libs/Org'
 import type { Plan } from '@/libs/Entitlements'
 
@@ -19,8 +20,18 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
     // Ensure the landing page belongs to this org
     const lp = (await db.select().from(landingPageSchema).where(eq(landingPageSchema.id, String(landingPageId))).limit(1))[0]
-    if (!lp) return NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
-    if (String(lp.organizationId) !== String(clerkOrgId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!lp) {
+      const r = NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
+    if (String(lp.organizationId) !== String(clerkOrgId)) {
+      const r = NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
+    }
 
       // Enforce billing, then publishing feature flag per-organization
       const requireActiveBilling = (await import('@/libs/requireActiveBilling')).default
@@ -47,10 +58,16 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
       if (existingPublished) {
         // Already published — idempotent success
-        return NextResponse.json({ published: true })
+        const r = NextResponse.json({ published: true })
+        r.headers.set('Cache-Control', 'no-store')
+        try { applySecurityHeaders(r.headers) } catch (e) {}
+        return r
       }
 
-      return NextResponse.json({ error: 'No draft to publish' }, { status: 404 })
+      const r = NextResponse.json({ error: 'No draft to publish' }, { status: 404 })
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
     }
 
     const now = new Date()
@@ -73,7 +90,10 @@ export async function POST(_request: Request, { params }: { params: { id: string
       try {
         await assertPublishAllowed(clerkOrgId, plan)
       } catch (err: any) {
-        return NextResponse.json({ error: String(err?.message ?? err) }, { status: 403 })
+        const r = NextResponse.json({ error: String(err?.message ?? err) }, { status: 403 })
+        r.headers.set('Cache-Control', 'no-store')
+        try { applySecurityHeaders(r.headers) } catch (e) {}
+        return r
       }
     }
 
@@ -86,9 +106,17 @@ export async function POST(_request: Request, { params }: { params: { id: string
     // Update landing_page status
     await db.update(landingPageSchema).set({ status: 'published' }).where(eq(landingPageSchema.id, String(landingPageId)))
 
-    return NextResponse.json({ published: true })
+    const ok = NextResponse.json({ published: true })
+    ok.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(ok.headers) } catch (e) {}
+    return ok
   } catch (err: any) {
     const mapped = mapErrorToResponse(err)
-    return NextResponse.json(mapped.body, { status: mapped.status })
+    const r = NextResponse.json(mapped.body, { status: mapped.status })
+    r.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(r.headers) } catch (e) {}
+    return r
   }
 }
+
+export const runtime = 'nodejs'

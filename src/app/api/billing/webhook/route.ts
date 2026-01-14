@@ -9,6 +9,7 @@ import { isBillingEnabled } from '@/libs/FeatureFlags'
 import { eq } from 'drizzle-orm';
 import { logger } from '@/libs/Logger';
 import { mapErrorToResponse } from '@/libs/ApiErrors'
+import { applySecurityHeaders } from '@/libs/SecurityHeaders'
 
 // Price IDs used to map to plans. Keep in env for production; placeholders are fallback.
 const PRICE_BASIC = STRIPE_PRICE_BASIC ?? 'price_basic_placeholder';
@@ -311,15 +312,25 @@ export async function POST(request: Request) {
         break;
     }
 
-    return NextResponse.json({ received: true });
+    const r = NextResponse.json({ received: true });
+    r.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(r.headers) } catch (e) {}
+    return r
   } catch (err: any) {
     // Preserve explicit UNKNOWN_PRICE behavior so Stripe doesn't retry noisy events
     if (err?.code === 'UNKNOWN_PRICE') {
       logger.error({ err: String(err), details: err?.message ?? null }, 'Webhook rejected due to unknown Stripe price id');
-      return NextResponse.json({ error: 'Unknown Stripe price id' }, { status: 400 });
+      const r = NextResponse.json({ error: 'Unknown Stripe price id' }, { status: 400 });
+      r.headers.set('Cache-Control', 'no-store')
+      try { applySecurityHeaders(r.headers) } catch (e) {}
+      return r
     }
-
     const mapped = mapErrorToResponse(err)
-    return NextResponse.json(mapped.body, { status: mapped.status })
+    const r = NextResponse.json(mapped.body, { status: mapped.status })
+    r.headers.set('Cache-Control', 'no-store')
+    try { applySecurityHeaders(r.headers) } catch (e) {}
+    return r
   }
 }
+
+export const runtime = 'nodejs'
