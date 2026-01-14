@@ -1,3 +1,11 @@
+# [1.2.0](https://github.com/dewolecodes/flyyy/compare/v1.1.0...v1.2.0) (2026-01-14)
+
+
+### Features
+
+* enforce active billing for paid features ([024b9a5](https://github.com/dewolecodes/flyyy/commit/024b9a52adc49714e72952498ec707147f9b495b))
+* **ui:** map API errors to UI actions for billing/access flows ([0b2d612](https://github.com/dewolecodes/flyyy/commit/0b2d61216bf8293bbd8b66965e003abe306ff4c8))
+
 # [1.1.0](https://github.com/dewolecodes/flyyy/compare/v1.0.0...v1.1.0) (2026-01-14)
 
 
