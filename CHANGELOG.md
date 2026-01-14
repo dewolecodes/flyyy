@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/dewolecodes/flyyy/compare/v1.0.0...v1.1.0) (2026-01-14)
+
+
+### Features
+
+* enforce auth and org context with server-side helper ([5bc5244](https://github.com/dewolecodes/flyyy/commit/5bc5244eae93174c449443bafc54d7ad4caf72b6))
+
 # 1.0.0 (2026-01-12)
 
 
