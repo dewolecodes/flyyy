@@ -1,6 +1,8 @@
 "use client"
 
 import React, { useMemo, useEffect, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { mapErrorCodeToUIAction, performUIAction } from '@/libs/ApiErrorActions'
 import useLandingPageEditor from '../../../editor/useLandingPageEditor'
 import { createSectionFactory, generateId } from '../../../editor/sectionFactories'
 import LandingPageRenderer from '../../../components/landing-renderer/LandingPageRenderer'
@@ -66,6 +68,8 @@ export default function Page() {
   const [aiStatus, setAiStatus] = useState<'idle' | 'pending' | 'applied' | 'rejected'>('idle')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const router = useRouter()
+  const [uiBanner, setUiBanner] = useState<React.ReactNode | null>(null)
   const saveTimeout = useRef<number | null>(null)
 
   // Hydrate from server on load (fetch latest draft by slug+org)
@@ -148,6 +152,14 @@ export default function Page() {
       const res = await fetch('/api/ai/landing-page-generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ landingPageId: lpId, mode, context: { businessName: DEV_NAME, audience: 'developers', tone: 'professional' } }) })
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
+        const code = b?.error?.code
+        const action = mapErrorCodeToUIAction(code, b?.error?.message)
+        if (action.type !== 'none') {
+          performUIAction(action, router, setUiBanner)
+          setAiLoading(false)
+          return
+        }
+
         setAiError(b?.error || `AI request failed: ${res.status}`)
         setAiLoading(false)
         return
@@ -275,6 +287,8 @@ export default function Page() {
     <div className="editor-root">
       <div className="editor-main">
         <h2 className="editor-title">Landing Editor Test (Dev)</h2>
+
+        {uiBanner && <div style={{ marginBottom: 12 }}>{uiBanner}</div>}
 
         <div className="controls">
           <button className="btn" onClick={addHero}>➕ Add Hero</button>

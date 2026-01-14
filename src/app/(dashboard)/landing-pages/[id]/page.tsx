@@ -57,6 +57,8 @@ export default async function EditLandingPagePage({ params }: Props) {
 
 import * as React from 'react';
 import { isAIEnabledClient } from '@/libs/env';
+import { useRouter } from 'next/navigation';
+import { mapErrorCodeToUIAction, performUIAction } from '@/libs/ApiErrorActions';
 import { useForm } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -79,6 +81,8 @@ function EditLandingPageForm({ initial, id, hasDraft, latestIsPublished }: { ini
   const [aiDraft, setAiDraft] = React.useState<any | null>(null);
   const [aiStatus, setAiStatus] = React.useState<'idle' | 'pending' | 'applied' | 'rejected'>('idle');
   const [aiError, setAiError] = React.useState<string | null>(null);
+  const router = useRouter();
+  const [uiBanner, setUiBanner] = React.useState<React.ReactNode | null>(null);
   const [currentSchema, setCurrentSchema] = React.useState<any | null>(null);
   const [sectionAIDrafts, setSectionAIDrafts] = React.useState<Record<string, any>>({});
   const [publishing, setPublishing] = React.useState(false);
@@ -150,6 +154,13 @@ function EditLandingPageForm({ initial, id, hasDraft, latestIsPublished }: { ini
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        const code = body?.error?.code;
+        const action = mapErrorCodeToUIAction(code, body?.error?.message);
+        if (action.type !== 'none') {
+          performUIAction(action, router, setUiBanner);
+          return;
+        }
+
         if (res.status === 403) setAiError('Unauthorized to generate AI suggestions for this organization.');
         else if (res.status === 404) setAiError('Landing page not found for AI generation.');
         else setAiError(body?.error || `AI request failed: ${res.status}`);
@@ -207,11 +218,18 @@ function EditLandingPageForm({ initial, id, hasDraft, latestIsPublished }: { ini
 
       const res = await fetch('/api/ai/landing-page-generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       if (!res.ok) {
-        const b = await res.json().catch(() => ({}))
-        if (res.status === 403) setAiError('Unauthorized to generate AI suggestions for this organization.')
-        else if (res.status === 404) setAiError('Landing page not found for AI generation.')
-        else setAiError(b?.error || `AI request failed: ${res.status}`)
-        return
+        const b = await res.json().catch(() => ({}));
+        const code = b?.error?.code;
+        const action = mapErrorCodeToUIAction(code, b?.error?.message);
+        if (action.type !== 'none') {
+          performUIAction(action, router, setUiBanner);
+          return;
+        }
+
+        if (res.status === 403) setAiError('Unauthorized to generate AI suggestions for this organization.');
+        else if (res.status === 404) setAiError('Landing page not found for AI generation.');
+        else setAiError(b?.error || `AI request failed: ${res.status}`);
+        return;
       }
 
       const body = await res.json()
@@ -306,7 +324,13 @@ function EditLandingPageForm({ initial, id, hasDraft, latestIsPublished }: { ini
                 const res = await fetch(`/api/landing-pages/${id}/publish`, { method: 'POST' });
                 if (!res.ok) {
                   const b = await res.json().catch(() => ({}));
-                  setServerError(b?.error || `Publish failed: ${res.status}`);
+                  const code = b?.error?.code;
+                  const action = mapErrorCodeToUIAction(code, b?.error?.message);
+                  if (action.type !== 'none') {
+                    performUIAction(action, router, setUiBanner);
+                  } else {
+                    setServerError(b?.error || `Publish failed: ${res.status}`);
+                  }
                 } else {
                   const data = await res.json().catch(() => ({}));
                   if (data?.published) {
@@ -332,7 +356,13 @@ function EditLandingPageForm({ initial, id, hasDraft, latestIsPublished }: { ini
                 const res = await fetch(`/api/landing-pages/${id}/unpublish`, { method: 'POST' });
                 if (!res.ok) {
                   const b = await res.json().catch(() => ({}));
-                  setServerError(b?.error || `Unpublish failed: ${res.status}`);
+                  const code = b?.error?.code;
+                  const action = mapErrorCodeToUIAction(code, b?.error?.message);
+                  if (action.type !== 'none') {
+                    performUIAction(action, router, setUiBanner);
+                  } else {
+                    setServerError(b?.error || `Unpublish failed: ${res.status}`);
+                  }
                 } else {
                   const data = await res.json().catch(() => ({}));
                   if (data?.unpublished) {
@@ -461,6 +491,7 @@ function EditLandingPageForm({ initial, id, hasDraft, latestIsPublished }: { ini
         {errors.description && <div className="text-sm text-destructive">{errors.description.message}</div>}
       </div>
 
+      {uiBanner && <div className="mb-3">{uiBanner}</div>}
       {serverError && <div className="text-sm text-destructive">{serverError}</div>}
 
       <div className="flex items-center gap-3">
