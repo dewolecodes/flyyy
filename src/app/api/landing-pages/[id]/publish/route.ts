@@ -22,7 +22,10 @@ export async function POST(_request: Request, { params }: { params: { id: string
     if (!lp) return NextResponse.json({ error: 'Landing page not found' }, { status: 404 })
     if (String(lp.organizationId) !== String(clerkOrgId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-      // Enforce publishing feature flag per-organization
+      // Enforce billing, then publishing feature flag per-organization
+      const requireActiveBilling = (await import('@/libs/requireActiveBilling')).default
+      await requireActiveBilling(clerkOrgId)
+
       const publishAllowed = await isPublishingEnabled(clerkOrgId)
       if (!publishAllowed) throw new Error('Publishing disabled for organization')
 

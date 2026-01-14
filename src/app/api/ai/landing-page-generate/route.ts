@@ -56,7 +56,10 @@ export async function POST(request: Request) {
       return 'starter'
     }
 
-    // Enforce server-side feature flag + AI usage limits before generation
+    // Enforce billing, feature flag, and AI usage limits before generation
+    const requireActiveBilling = (await import('@/libs/requireActiveBilling')).default
+    await requireActiveBilling(clerkOrgId)
+
     const featureAllowed = await isAIEnabled(clerkOrgId)
     if (!featureAllowed) throw new Error('AI features disabled')
     const orgRow = await getOrganization(clerkOrgId)

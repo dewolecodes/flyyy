@@ -5,6 +5,8 @@ export const ErrorCodes = {
   USAGE_LIMIT_EXCEEDED: 'USAGE_LIMIT_EXCEEDED',
   ENTITLEMENT_REQUIRED: 'ENTITLEMENT_REQUIRED',
   BILLING_DISABLED: 'BILLING_DISABLED',
+  BILLING_REQUIRED: 'BILLING_REQUIRED',
+  SUBSCRIPTION_INACTIVE: 'SUBSCRIPTION_INACTIVE',
   UNAUTHENTICATED: 'UNAUTHENTICATED',
   ORG_REQUIRED: 'ORG_REQUIRED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
@@ -61,6 +63,14 @@ export function mapErrorToResponse(err: any) {
 
   if (err?.code === 'BILLING_DISABLED') {
     return { status: 403, body: { error: { code: ErrorCodes.BILLING_DISABLED, message: 'Billing disabled for organization' } } }
+  }
+
+  if (err?.code === 'BILLING_REQUIRED' || err?.code === ErrorCodes.BILLING_REQUIRED) {
+    return { status: 402, body: { error: { code: ErrorCodes.BILLING_REQUIRED, message: 'Billing required' } } }
+  }
+
+  if (err?.code === 'SUBSCRIPTION_INACTIVE' || err?.code === ErrorCodes.SUBSCRIPTION_INACTIVE) {
+    return { status: 403, body: { error: { code: ErrorCodes.SUBSCRIPTION_INACTIVE, message: 'Subscription inactive or delinquent' } } }
   }
 
   // Feature-disabled messages (textual match fallback)
